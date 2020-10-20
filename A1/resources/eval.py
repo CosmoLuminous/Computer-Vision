@@ -43,6 +43,7 @@ if __name__ == "__main__":
 
         det_mask = cv2.imread(fdet, cv2.CV_8UC1)
 
+        #print(det_mask.shape,  gt_mask.shape)
         assert(det_mask.shape == gt_mask.shape)
         iou.append(get_iou(det_mask, gt_mask))
         print("IoU for image {} = {}".format(fimg, iou[-1]))
