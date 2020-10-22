@@ -47,8 +47,7 @@ def generate_mask(img):
     show1 = cv.hconcat([cv.cvtColor(image, cv.COLOR_BGR2GRAY),imp_cont_image, imp_cont_smt_image])
     #show_image(show1)
 
-    kernel = np.ones((5,5), np.uint8) 
-    erode_img = cv.erode(imp_cont_smt_image, kernel, iterations=2) 
+    erode_img = cv.erode(imp_cont_smt_image, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=2) 
     print("Erode Image")
     #show_image(erode_img)
 
@@ -57,11 +56,10 @@ def generate_mask(img):
     #show_image(show3,"thresh",True)
     print("Thresholding")
 
-    kernel = np.ones((3, 3), np.uint8) 
-    #open = cv.morphologyEx(canny_edges, cv.MORPH_OPEN, kernel, iterations = 1) 
-    open_close = cv.morphologyEx(th_img, cv.MORPH_CLOSE, kernel, iterations = 2) 
-    kernel = np.ones((5,5), np.uint8) 
-    open_close = cv.erode(open_close, kernel, iterations=2)
+    #open = cv.morphologyEx(canny_edges, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,(3,3)), iterations = 1) 
+    open_close = cv.morphologyEx(th_img, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT,(3,3)), iterations = 2) 
+    
+    open_close = cv.erode(open_close, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=2)
     show4 = cv.hconcat([th_img, open_close])
     print("Close and Erode operations")
     #show_image(show4, "Th Close", True)
@@ -89,6 +87,7 @@ def generate_mask(img):
     gb_ctr = filtered_big_ctr[-1]
     output = np.zeros((H,W))
     cv.drawContours(output, [gb_ctr], -1, (255,255,255), -1)
+    output = cv.dilate(output, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=3)
     #show_image(output, img.split("/")[-1][:-4], True)
     save_mask(img.split("/")[-1][:-4], output)
 
