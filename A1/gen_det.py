@@ -86,8 +86,15 @@ def generate_mask(img):
     filtered_big_ctr = sorted(filtered_big_ctr, key=cv.contourArea)
     gb_ctr = filtered_big_ctr[-1]
     output = np.zeros((H,W))
-    cv.drawContours(output, [gb_ctr], -1, (255,255,255), -1)
+    poly_mask_gb = []
+    sampler = 33
+    for i in range(int(len(gb_ctr)/sampler)):
+        poly_mask_gb.append(gb_ctr[i*sampler])
+    poly_mask_gb.append(gb_ctr[-1])
+
+    cv.drawContours(output, [np.array(poly_mask_gb)], -1, (255,255,255), -1)
     output = cv.dilate(output, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=3)
+
     #show_image(output, img.split("/")[-1][:-4], True)
     save_mask(img.split("/")[-1][:-4], output)
 
