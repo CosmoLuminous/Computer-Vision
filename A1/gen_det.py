@@ -6,101 +6,174 @@ import numpy as np
 import argparse
 import matplotlib.pyplot as plt
 
-def show_image(img, name="default",save=False):
+
+''' DEFINE GLOBAL VARIABLES '''
+RECT_KERNEL_5X5 = cv.getStructuringElement(cv.MORPH_RECT,(5,5))
+RECT_KERNEL_3X3 = cv.getStructuringElement(cv.MORPH_RECT,(3,3))
+
+
+''' UTIL FUNCTIONS '''
+def hconcat_images(image_list):
+    return cv.hconcat(image_list)
+
+def show_image(img, title='Default', save=False):
     if img is None:
-        print('Could not open or find the image: ', args.input)
-        exit(0)
-    else:
-        '''cv2.imshow('image', image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()'''
-        print("shape", img.shape)
+        print('Could not find image to show.')
+    else:        
+        print("\n\n%%%% IMAGE: {}, SHAPE: {} %%%%".format(title, img.shape))
         fig = plt.figure(0)
         plt.imshow(img, cmap='gray')
         plt.show()
         if save:
             fig.savefig("plots/"+name+".png", dpi=300, format="png")        
     return
-def save_mask(name, mask):
-    pth = os.path.join(det_path,name+".png")
-    print("saving mask:",pth)
-    cv.imwrite(pth,mask)
+
+def save_mask(mask, name):
+    path = os.path.join(det_path,name+".png")
+    print("saving mask: %s.png"%name)
+    cv.imwrite(path,mask)
+    return
 
 
-def generate_mask(img):
-    print("\n\n$$$Reading Image", img)
-    orig_image = cv.imread(img)
-    (H,W,C) = orig_image.shape
-    print("Original Image", orig_image.shape)
-    #show_image(orig_image)
+''' CV FUNCTIONS '''
+
+def convert_grayscale(img):
+    return cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+
+def bilateral_filter(img, d_val=9,color=100,space=100,border=cv.BORDER_REPLICATE):
+    filtered_img = cv.bilateralFilter(img, d=d_val,sigmaColor=color,sigmaSpace=space,borderType=border)
+    return filtered_img
+
+def apply_clahe(img, limit=1, grid=(8,8)):
+    if len(img.shape) != 2:
+        img = convert_grayscale(img)
+        print("Converted to Grayscale")
     
-    image = cv.bilateralFilter(orig_image, d=9,sigmaColor=100,sigmaSpace=100,borderType=cv.BORDER_REPLICATE)
-    print("\n\nImage Smoothing")
-    #show_image(image)
-    clahe = cv.createCLAHE(clipLimit=1, tileGridSize=(8,8))
-    imp_cont_image = clahe.apply(cv.cvtColor(image,cv.COLOR_BGR2GRAY))
-    print("Improved contrast")
+    clahe = cv.createCLAHE(clipLimit=limit, tileGridSize=grid)
+    improved_hist_img = clahe.apply(img)
+
+    return improved_hist_img
+
+def erode_img(img, window_size = 5, iter=2):
+    if window_size == 5:
+        kernel = RECT_KERNEL_5X5
+    else:
+        kernel = RECT_KERNEL_3X3
+
+    eroded_img = cv.erode(img, kernel, iterations = iter)
+
+    return eroded_img
+
+def dilate_img(img, window_size = 5, iter = 2):
+    if window_size == 5:
+        kernel = RECT_KERNEL_5X5
+    else:
+        kernel = RECT_KERNEL_3X3
     
-    imp_cont_smt_image = cv.bilateralFilter(imp_cont_image, d=9,sigmaColor=100,sigmaSpace=100,borderType=cv.BORDER_REPLICATE)
-    #print("Improved contrast + Smoothed")
+    dilated_img = cv.dilate(img, kernel, iterations = iter)
+
+    return dilated_img
+
+def img_thresholding(img, th=60, color=255):
+
+    _, th_img = cv.threshold(img,th,color,cv.THRESH_BINARY_INV)
+
+    return th_img
+
+def morphology_ex(img, type, window_size = 3, iter = 2):
+    if window_size == 5:
+        kernel = RECT_KERNEL_5X5
+    else:
+        kernel = RECT_KERNEL_3X3
     
-    show1 = cv.hconcat([cv.cvtColor(image, cv.COLOR_BGR2GRAY),imp_cont_image, imp_cont_smt_image])
-    #show_image(show1)
+    if type == "close":
+        morph = cv.MORPH_CLOSE
+    elif type == "open":
+        morph = cv.MORPH_OPEN
 
-    erode_img = cv.erode(imp_cont_smt_image, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=2) 
-    print("Erode Image")
-    #show_image(erode_img)
+    morphed_img = cv.morphologyEx(img, morph, kernel, iterations = iter) 
 
-    ret, th_img = cv.threshold(erode_img,60,255,cv.THRESH_BINARY_INV)
-    show3 = cv.hconcat([erode_img, th_img])
-    #show_image(show3,"thresh",True)
-    print("Thresholding")
+    return morphed_img
 
-    #open = cv.morphologyEx(canny_edges, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT,(3,3)), iterations = 1) 
-    open_close = cv.morphologyEx(th_img, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT,(3,3)), iterations = 2) 
-    
-    open_close = cv.erode(open_close, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=2)
-    show4 = cv.hconcat([th_img, open_close])
-    print("Close and Erode operations")
-    #show_image(show4, "Th Close", True)
+def canny_detection(img,th1=45, th2=45,aperture=3,l2_grad=False):
 
-    canny_edges = cv.Canny(open_close,threshold1=45, threshold2=45,apertureSize=3,L2gradient=False)
+    canny_edges = cv.Canny(img,threshold1=th1, threshold2=th2,apertureSize=aperture,L2gradient=l2_grad)
 
-    show2 = cv.hconcat([open_close, canny_edges])
-    #show_image(show2, "Close Canny", True)
-    print("Canny Edge Detection")
+    return canny_edges
 
-    contours, hierarchy = cv.findContours(open_close, cv.RETR_CCOMP, cv.CHAIN_APPROX_NONE)
-    print("Find all contours and Extract Gallbladder")
+def find_contours(img):
 
-    #print(len(contours))
-    ctr = sorted(contours, key=cv.contourArea) 
-    big_ctr = ctr[-5:]
+    hierarchy, contours = cv.findContours(img, cv.RETR_CCOMP, cv.CHAIN_APPROX_NONE)
+
+    return hierarchy, contours
+
+def get_gallbladder_ctr(ctr, top_n = 5, min_area = 10000, max_area = 150000):
+
+    ctr = sorted(ctr, key=cv.contourArea) 
+    big_ctr = ctr[-top_n:]
     filtered_big_ctr = []
     for c in big_ctr:
         area = cv.contourArea(c)
-        #print("Area",area)
-        if area > 10000 and area < 150000:
+        if area > min_area and area < max_area:
             filtered_big_ctr.append(c)
     
     filtered_big_ctr = sorted(filtered_big_ctr, key=cv.contourArea)
     gb_ctr = filtered_big_ctr[-1]
-    output = np.zeros((H,W))
-    poly_mask_gb = []
-    sampler = 33
-    for i in range(int(len(gb_ctr)/sampler)):
-        poly_mask_gb.append(gb_ctr[i*sampler])
+
+    return gb_ctr
+
+def approximate_contour(gb_ctr, sample_size = 33):
+
+    poly_mask_gb = []    
+    for i in range(int(len(gb_ctr)/sample_size)):
+        poly_mask_gb.append(gb_ctr[i*sample_size])
     poly_mask_gb.append(gb_ctr[-1])
+    poly_mask_gb = np.array(poly_mask_gb)
 
-    cv.drawContours(output, [np.array(poly_mask_gb)], -1, (255,255,255), -1)
-    output = cv.dilate(output, cv.getStructuringElement(cv.MORPH_RECT,(5,5)), iterations=3)
+    return poly_mask_gb
 
-    #show_image(output, img.split("/")[-1][:-4], True)
-    save_mask(img.split("/")[-1][:-4], output)
+def draw_contour(mask_ctr, height, width):
 
-    return contours, hierarchy
+    canvas = np.zeros((height, width))
+    cv.drawContours(canvas, [mask_ctr], -1, (255,255,255), -1)
 
+    return canvas
 
+def generate_mask(img):
+
+    print("\n\n$$$----Reading Image", img)
+    orig_image = cv.imread(img)
+    (H,W,C) = orig_image.shape
+
+    smooth_img = bilateral_filter(orig_image)
+    show_image(smooth_img, "NOISE_REMOVED")
+
+    grayscale_img = convert_grayscale(smooth_img)
+    inc_contrast_img = apply_clahe(grayscale_img)
+    inc_contrast_img = bilateral_filter(inc_contrast_img)
+    show_image(inc_contrast_img, "CONTRAST_IMPROVED")
+
+    erode_im = erode_img(inc_contrast_img, iter=2)
+    show_image(erode_im)
+
+    th_img = img_thresholding(erode_im)
+    #show_image(th_img, "THRESHOLD")
+
+    close_th = morphology_ex(th_img, type="close", iter=2)
+    erode_close_th = erode_img(close_th, iter=2)
+    #show_image(erode_close_th, "CLOSE_ERODE_THRESHOLD")
+
+    contours, _ = find_contours(erode_close_th)
+    gb_ctr = get_gallbladder_ctr(contours)
+    enhanced_gb_ctr = approximate_contour(gb_ctr, sample_size = 32)
+    
+    gb_mask = draw_contour(enhanced_gb_ctr, H, W)
+    gb_mask = dilate_img(gb_mask, iter=3)
+    #show_image(gb_mask, "GALLBLADDER_MASK")
+    
+    save_mask(gb_mask, img.split("/")[-1][:-4])
+
+    return
 
 if __name__ == "__main__":
      
@@ -114,9 +187,9 @@ if __name__ == "__main__":
     det_path = args.det_path
     print("image folder:", img_path)
     print("det folder:", det_path)
-    images = glob(os.path.join(img_path,"*.jpg"))
+    images = glob(os.path.join(img_path,"*"))
     print("Total # images to process =", len(images))
 
     #for img in images:
     for img in images:
-        ctr, hrcy = generate_mask(img)
+        generate_mask(img)
