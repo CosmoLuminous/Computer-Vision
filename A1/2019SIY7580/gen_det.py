@@ -149,6 +149,7 @@ def find_contours(img):
 
     return hierarchy, contours
 
+
 def get_gallbladder_ctr(ctr, top_n = 5, min_area = 10000, max_area = 150000):
     '''
     Isolate gallbladder contour from a list of contours
@@ -161,11 +162,7 @@ def get_gallbladder_ctr(ctr, top_n = 5, min_area = 10000, max_area = 150000):
         area = cv.contourArea(c)
         if area > min_area and area < max_area:
             filtered_big_ctr.append(c)
-    '''if len(filtered_big_ctr) == 0:
-        for c in big_ctr:
-            area = cv.contourArea(c)
-            if area > 5000 and area < 10000:
-                filtered_big_ctr.append(c)'''
+    
     if len(filtered_big_ctr) != 0:
         filtered_big_ctr = sorted(filtered_big_ctr, key=cv.contourArea)
         gb_ctr = filtered_big_ctr[-1]
@@ -198,9 +195,12 @@ def draw_contour(mask_ctr, height, width):
     return canvas
 
 def draw_central_mask(img, height, width):
+    '''
+    ALternate Approach in case no contour detected
+    '''
     canvas = np.zeros((height, width), dtype=np.uint8)
-    center_coordinates = (int(height/2), int(width/2)) 
-    axesLength = (int(np.sqrt(height**2+width**2)*0.7*0.5), int(np.sqrt(height**2+width**2)*0.3*0.5))     
+    center_coordinates = (int(width/2), int(height/2)) 
+    axesLength = (int(np.sqrt(height**2+width**2)*0.7*0.5), int(np.sqrt(height**2+width**2)*0.4*0.5)) 
     angle = -30
     startAngle = 0
     endAngle = 360
@@ -208,7 +208,23 @@ def draw_central_mask(img, height, width):
     thickness = -1
     
     canvas = cv.ellipse(canvas, center_coordinates, axesLength, angle, startAngle, endAngle, color, thickness) 
-    return canvas
+    img = img.astype(np.uint8)
+    bitwise_area = cv.bitwise_and(img, img, mask=canvas)
+    bitwise_area = erode_img(bitwise_area)
+    Contour, _ = find_contours(bitwise_area)
+    ctr = sorted(Contour, key=cv.contourArea)
+    ctr = ctr[-1]
+
+    return ctr
+
+def smooth_mask(mask, kernel_size=51):
+    '''
+    Smooth the irregular edges of the contour
+    '''
+    blurred_img  = cv.GaussianBlur(mask, (kernel_size, kernel_size), 0)
+    
+    _, th = cv.threshold(blurred_img, 130, 255, cv.THRESH_BINARY)
+    return th
 
 def generate_mask(img): 
     '''
@@ -247,20 +263,27 @@ def generate_mask(img):
     #Find all contours and isolate Gallbladder contour
     contours, _ = find_contours(erode_close_th)
     gb_ctr = get_gallbladder_ctr(contours)
-    if not gb_ctr is None:
-        rough_ctr = draw_contour(gb_ctr, H, W)
-        #show_image(rough_ctr, "ROUGH_CONTOUR", True)
-        enhanced_gb_ctr = approximate_contour(gb_ctr, sample_size = 32)
-    
-        #Draw the Smooth Gallbladder Mask
-        gb_mask = draw_contour(enhanced_gb_ctr, H, W)
-        gb_mask = dilate_img(gb_mask, iter=3)
-    else:
-        gb_mask = draw_contour(None, H,W)
-        #gb_mask = draw_central_mask(erode_close_th, H, W)
+    if gb_ctr is None:
+        print("Alternate Approach")
+        gb_ctr = draw_central_mask(erode_close_th, H, W)
+
+    rough_ctr = draw_contour(gb_ctr, H, W)
+    gaussian_mask = dilate_img(rough_ctr, iter=2)
+    gaussian_mask = smooth_mask(gaussian_mask, 101)
+
+    #show_image(rough_ctr, "ROUGH_CONTOUR", True)
+    enhanced_gb_ctr = approximate_contour(gb_ctr, sample_size = 32)
+
+    #Draw the Smooth Gallbladder Mask
+    gb_mask = draw_contour(enhanced_gb_ctr, H, W)
+    gb_mask = dilate_img(gb_mask, iter=2)
+
+    #common mask Gaussian + Sampled smoothed
+    common_smooth_mask = cv.bitwise_or(gaussian_mask, gb_mask)
+    common_smooth_mask = dilate_img(common_smooth_mask, iter=1)
     #show_image(gb_mask, "GALLBLADDER_MASK", True)
     
-    save_mask(gb_mask, img.split("/")[-1][:-4])
+    save_mask(common_smooth_mask, img.split("/")[-1][:-4])
 
     return
 
