@@ -217,6 +217,15 @@ def draw_central_mask(img, height, width):
 
     return ctr
 
+def smooth_mask(mask, kernel_size=51):
+    '''
+    Smooth the irregular edges of the contour
+    '''
+    blurred_img  = cv.GaussianBlur(mask, (kernel_size, kernel_size), 0)
+    
+    _, th = cv.threshold(blurred_img, 130, 255, cv.THRESH_BINARY)
+    return th
+
 def generate_mask(img): 
     '''
     GENERATE MASK: 
@@ -259,15 +268,22 @@ def generate_mask(img):
         gb_ctr = draw_central_mask(erode_close_th, H, W)
 
     rough_ctr = draw_contour(gb_ctr, H, W)
+    gaussian_mask = dilate_img(rough_ctr, iter=2)
+    gaussian_mask = smooth_mask(gaussian_mask, 101)
+
     #show_image(rough_ctr, "ROUGH_CONTOUR", True)
     enhanced_gb_ctr = approximate_contour(gb_ctr, sample_size = 32)
 
     #Draw the Smooth Gallbladder Mask
     gb_mask = draw_contour(enhanced_gb_ctr, H, W)
-    gb_mask = dilate_img(gb_mask, iter=3)
+    gb_mask = dilate_img(gb_mask, iter=2)
+
+    #common mask Gaussian + Sampled smoothed
+    common_smooth_mask = cv.bitwise_or(gaussian_mask, gb_mask)
+    common_smooth_mask = dilate_img(common_smooth_mask, iter=1)
     #show_image(gb_mask, "GALLBLADDER_MASK", True)
     
-    save_mask(gb_mask, img.split("/")[-1][:-4])
+    save_mask(common_smooth_mask, img.split("/")[-1][:-4])
 
     return
 
