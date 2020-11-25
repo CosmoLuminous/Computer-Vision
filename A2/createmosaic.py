@@ -1,10 +1,27 @@
+'''
+*********************************************
+# TITLE: ASSIGNMENT 2:IMAGE MOSAIC CREATION # 
+#        Image Stitching                    #
+# COURSE: COL780 - COMPUTER VISION          #
+# INSTRUCTOR: PROF. CHETAN ARORA            #
+# AUTHOR: AMAN BHARDWAJ                     #
+# DATE: 20 NOV 2020                         #
+*********************************************
+'''
+''' IMPORT PACKAGES '''
+import os
 import cv2 as cv
-import matplotlib.pyplot as plt
+import json
+from glob import glob
 import numpy as np
+import argparse
+import matplotlib.pyplot as plt
 
-t = np.arange(0.0, 2.0, 0.01)
-s = 1 + np.sin(2*np.pi*t)
-plt.plot(t, s)
+if __name__ == "__main__":
+     
+    parser = argparse.ArgumentParser(description='Grayscale Mask Generation Script for segmentation of Gall Bladder Images')
+    parser.add_argument('-i', '--input_path', type=str, default='./val_set/1', required=True, help="Path for the image folder")
+    args = parser.parse_args()
+    input_path = args.input_path
+    print(input_path)
 
-plt.title('About as simple as it gets, folks')
-plt.show()
