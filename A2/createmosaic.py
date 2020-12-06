@@ -88,7 +88,7 @@ class ImgProcessing:
         img_output = cv.cvtColor(img_yuv, cv.COLOR_YUV2BGR)
         return img_output
 
-    def apply_clahe(self, img, limit=1, grid=(8,8)):
+    def apply_clahe(self, img, limit=1.2, grid=(8,8)):
         '''
         CLAHE:
         Histogram Equalization and Contrast enhancement
@@ -133,7 +133,7 @@ class RegisterImage:
             #draw detected keypoints on image and show
             img2 = img
             img2 = cv.drawKeypoints(img,keyPoints,img2,color=(0,255,0), flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-            show_image(img2, "SIFT_DETECTOR")
+            show_image(img2, "SIFT_DETECTOR_"+str(z), True)
         return keyPoints, imgDescriptors
 
     def flann_matcher(self, d1, d2, K=2):
@@ -168,7 +168,7 @@ class RegisterImage:
         match_canvas = cv.drawMatches(img1, k1, img2, k2, g_matches, None, 
                                       flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
         if draw:
-            show_image(match_canvas, "KNN_MATCHES"+str(z), True)
+            show_image(match_canvas, "KNN_MATCHES_"+str(z), True)
         return
 
     def est_homography(self, k1, k2, confident_matches, min_matches=20):
@@ -219,9 +219,9 @@ class ImageBlending:
         i2_warp = cv.warpPerspective(i2, H, (w1,h1))
         
         if show:
-            show_image(mosaic, "MOSAIC"+str(i))
-            show_image(hconcat_images([i1_mask,i2_mask]), "M1 & M2") 
-            show_image(i2_warp, "I2 Warp")
+            show_image(mosaic, "MOSAIC_"+str(z), True)
+            show_image(hconcat_images([i1_mask,i2_mask]), "M1_&_M2 "+str(z), True) 
+            show_image(i2_warp, "I2_Warp "+str(z), True)
         return mosaic, i1_mask, i2_mask, i2_warp
     
     def get_images_intersect(self, m1, m2, mos):
@@ -251,7 +251,7 @@ class ImageBlending:
         energy_map[energy_map > 0.7] = 1.0
         energy_map[energy_map <0.2] = 0.0
         
-        show_image(energy_map, "ENERGY MAP2")
+        #show_image(energy_map, "ENERGY MAP2")
         return energy_map
     
     def get_extreme_columns(self, cmask):
@@ -292,7 +292,26 @@ class ImageBlending:
             if np.max(row) > 0:
                 top = i
                 break
-        return int((col_left+col_leftmost)/2-(col_left-col_leftmost)/3), col_right, top, bottom
+        return int((col_left+col_leftmost)/2-(col_left-col_leftmost)/3.5), col_right, top, bottom
+    
+    def get_top_right(self, mos):
+        '''helper function'''
+        h, w = mos.shape[:2]
+        gray = cv.cvtColor(mos, cv.COLOR_BGR2GRAY)
+        mask = cv.threshold(gray, 0, 255, cv.THRESH_BINARY)[1]
+        right = w
+        top = 0
+        for c in range(w):
+            v = mask[:,-c]
+            if np.max(v) > 0:
+                right = w-c-1
+                break        
+        for i in range(h):
+            row = mask[i,:]
+            if np.max(row) > 0:
+                top = i
+                break        
+        return right, top
     
     def graph_cut(self, cmask, cmos, left_img, right_img, i2_mask, mos):
         '''
@@ -303,7 +322,7 @@ class ImageBlending:
         '''
         #find overlap region
         left_col, right_col, top_row, bottom_row = self.get_extreme_columns(cmask)
-        
+
         c_left = cv.bitwise_and(left_img,left_img, mask= cmask.astype(np.uint8))
         c_right = cv.bitwise_and(right_img,right_img, mask= cmask.astype(np.uint8))
                 
@@ -311,7 +330,7 @@ class ImageBlending:
         c_int_diff = np.abs(cv.cvtColor(c_left, cv.COLOR_BGR2GRAY).astype(np.float32) - 
                           cv.cvtColor(c_right, cv.COLOR_BGR2GRAY).astype(np.float32))/16.0
         cmos_emap = c_int_diff[:, left_col: right_col]
-        show_image(cmos_emap.astype(np.float32), "INTENSITY DIFF")
+        #show_image(c_int_diff.astype(np.float32)/3.5, "ENERGY_MAP_"+str(z), True)
         
         #graph init
         dim = cmos_emap.shape[:2]
@@ -344,15 +363,18 @@ class ImageBlending:
         print('maxflow: {}'.format(flow))
         segments = graph.get_grid_segments(nodes)
         min_cut = np.logical_not(segments).astype(np.uint8)
-        plt.imshow(min_cut, cmap="gray")
-        plt.show()
+        #fig = plt.figure(1)
+        #plt.imshow(min_cut, cmap="gray")
+        #plt.axis('off')
+        #plt.show()
+        #fig.savefig("./plots/min_cut_{}.png".format(str(z)), dpi=300, format="png") 
         
         #apply min cut to left and right overlaps
         o_left = left_img[:, left_col: right_col]
         o_right = right_img[:, left_col: right_col]
         o_left_dash = cv.bitwise_and(o_left,o_left, mask= min_cut.astype(np.uint8))
         o_right_dash = cv.bitwise_and(o_right,o_right, mask= np.logical_not(min_cut).astype(np.uint8))        
-        show_image(hconcat_images([o_left_dash, o_right_dash]), "LEFT AND RIGHT OVERLAP")
+        #show_image(hconcat_images([o_left_dash, o_right_dash]), "LEFT_AND_RIGHT_OVERLAP_".format(str(z), True))
 
         #create new mosaic 
         o_new_mosaic = o_left_dash + o_right_dash
@@ -360,11 +382,26 @@ class ImageBlending:
         new_mosaic[:, left_col: right_col] = o_new_mosaic
         new_mosaic[:,0: left_col] = left_img[:,0: left_col]
         new_mosaic[:,right_col: ] = right_img[:,right_col: ]
-        new_mosaic[-200:,:] = right_img[-200:,:]
+#         new_mosaic[-200:,:] = right_img[-200:,:]
         new_mosaic[0:200,:] = right_img[0:200,:]
-        show_image(new_mosaic, "NEW MOSAIC")
+        ri, to = self.get_top_right(new_mosaic)
+        new_mosaic = new_mosaic[to:-200,200:ri]
+        #show_image(new_mosaic, "NEW_MOSAIC_"+str(z), True)
+        
+#         new_left[:, left_col: right_col] = o_left_dash
+#         new_left[:,0: left_col] = left_img[:,0: left_col]
+        
+#         new_right_dash = new_right.copy()
+#         new_right_dash[:, left_col: right_col] = o_right_dash
+#         new_right_dash[:,right_col: ] = new_right[:,right_col: ]
+#         new_right_dash[-200:,:] = new_right[-200:,:]
+#         new_right_dash[0:200,:] = new_right[0:200,:]
+#         new_mosaic_dash = new_right_dash + new_left
+#         show_image(hconcat_images([new_left, new_right_dash]), "NEW_LEFT_RIGHT")
+#         show_image(new_mosaic, "NEW_MOSAIC_"+str(z), True)
 
         return new_mosaic
+    
 
     def gaussian_pyramid(self, img, l):
         '''
@@ -434,7 +471,6 @@ class ImageBlending:
         GP1 = self.gaussian_pyramid(im1, pyr_levels)
         GP2 = self.gaussian_pyramid(im2, pyr_levels)
         GM = self.gaussian_pyramid(mask, pyr_levels)
-        print("GP LENS", len(GP1), len(GP2))
         
         GM_rev = GM.copy()
         GM_rev.reverse()
@@ -444,7 +480,7 @@ class ImageBlending:
         LP2 = self.laplacian_pyramid(GP2, pyr_levels)
         
         blended_image = self.blend(LP1, LP2, GM_rev, pyr_levels)
-        show_image(blended_image)
+        #show_image(blended_image, "PYRAMID_BLEND_"+str(z), True)
         return blended_image
     
 def create_mosaic(imgs, contrast_imp=True):
@@ -491,8 +527,8 @@ def create_mosaic(imgs, contrast_imp=True):
     graphcut_mos = blend.graph_cut(c_mask, c_mos, Img1, Img2_warp, M2,mosaic_pre)
     graphcut_mos = ip.image_resize(graphcut_mos, value=5000)
     graphcut_mos = ip.apply_clahe(graphcut_mos)
-    pyramid_blend = blend.pyramid_blending(graphcut_mos, pyr_levels=6)
-    
+    pyramid_blend = blend.pyramid_blending(graphcut_mos, pyr_levels=4)
+    #pyramid_blend = ip.apply_clahe(pyramid_blend, limit=1)
     return graphcut_mos, pyramid_blend
 
 
@@ -506,12 +542,14 @@ if __name__ == "__main__":
     #     print("Input Path =", input_path)
     images = glob(os.path.join(input_path, "*"))
     print("Folder Content:",images)
+    z = ""
     if len(images) == 2:
         print("\nPerfect Input! Let me stitch them for you! ;)")
         graphcut_mosaic, pyramidblend_mosaic = create_mosaic(images)
         image_name = input_path.split("/")[-1]
+        z = image_name
         save_mosaic(image_name+"_graph_cut_mosaic.png",graphcut_mosaic)
-        save_mosaic(image_name+"_bonus_pyramid_blend_mosaic.png",pyramidblend_mosaic)
+        save_mosaic(image_name+"_pyramid_blend_mosaic.png",pyramidblend_mosaic)
     elif len(images) == 1:
         print("\nOnly 1 image! Fine. mosaic == input. I can do better! Put 2 images and let me show you what i can do! :P")
         save_mosaic(images[0].split('/')[-2], cv.imread(images[0]))
