@@ -15,8 +15,8 @@ import cv2 as cv
 from glob import glob
 import numpy as np
 import argparse
-import matplotlib.pyplot as plt
-from time import time
+#import matplotlib.pyplot as plt
+#from time import time
 import maxflow as mf
 
 """ HELPER FUNCTIONS """
@@ -26,18 +26,23 @@ def save_mosaic(fileName, mos):
     cv.imwrite(fileName, mos)
     return
 
+# def show_image(img, title='Default', save=False):
+#     '''Display and save image'''
+#     if img is None:
+#         print('Could not find image to show.')
+#     else:        
+#         print("\n\n%%%% IMAGE: {}, SHAPE: {} %%%%".format(title, img.shape))
+#         fig = plt.figure(num=0, figsize=(14, 6), dpi=80, facecolor='w', edgecolor='k')
+#         plt.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+#         plt.axis('off')
+#         plt.show()
+#         if save:
+#             fig.savefig("plots/"+title+".png", dpi=300, format="png")       
+#     return
 def show_image(img, title='Default', save=False):
-    '''Display and save image'''
-    if img is None:
-        print('Could not find image to show.')
-    else:        
-        print("\n\n%%%% IMAGE: {}, SHAPE: {} %%%%".format(title, img.shape))
-        fig = plt.figure(num=0, figsize=(14, 6), dpi=80, facecolor='w', edgecolor='k')
-        plt.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
-        plt.axis('off')
-        plt.show()
-        if save:
-            fig.savefig("plots/"+title+".png", dpi=300, format="png")       
+    #dummy function for replacement of original show_image function
+    #as we are not allowed to use matplotlib.
+    print("SHOW_IMAGE Called")
     return
 
 def read_image(fileName):
@@ -97,8 +102,9 @@ class ImgProcessing:
 
         clahe = cv.createCLAHE(clipLimit=limit, tileGridSize=grid)
         img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])    
-        img_output = cv.cvtColor(img_yuv, cv.COLOR_YUV2BGR)
-
+        img_output = cv.cvtColor(img_yuv, cv.COLOR_YUV2BGR)        
+        img_output = cv.normalize(img_output, None, 0, 255, cv.NORM_MINMAX)
+        
         return img_output
 
 
@@ -185,10 +191,12 @@ class RegisterImage:
             points_img2 = np.array(points_img2, dtype=np.float32).reshape(-1, 1, 2)
             H, mask = cv.findHomography(points_img2, points_img1, cv.RANSAC, 5.0)
             inliers = list(mask.ravel())
+            flag = "good_matches"
         else:
             print("Number of Good Matches are less than Minimum Points set for Homography estimation.")
             H = inliers = None
-        return H, inliers
+            flag = "not_enough_matches"
+        return H, inliers, flag
 
 class ImageBlending:
     '''
@@ -517,19 +525,24 @@ def create_mosaic(imgs, contrast_imp=True):
     reg.draw_matches(Img1, Img2, kp1, kp2, confident_matches, False)
     
     #estimate homography using RANSAC
-    H, inliers = reg.est_homography(kp1, kp2, confident_matches, 40)
+    H, inliers, flag = reg.est_homography(kp1, kp2, confident_matches, 40)
     
+    if flag == "good_matches":
     #Graph cut and pyramid blending
-    blend = ImageBlending()
-    mosaic_pre, M1, M2, Img2_warp = blend.warp_image(Img1, Img2, H, False)
-    c_mask, c_mos = blend.get_images_intersect(M1, M2, mosaic_pre)
+        blend = ImageBlending()
+        mosaic_pre, M1, M2, Img2_warp = blend.warp_image(Img1, Img2, H, False)
+        c_mask, c_mos = blend.get_images_intersect(M1, M2, mosaic_pre)
 
-    graphcut_mos = blend.graph_cut(c_mask, c_mos, Img1, Img2_warp, M2,mosaic_pre)
-    graphcut_mos = ip.image_resize(graphcut_mos, value=5000)
-    graphcut_mos = ip.apply_clahe(graphcut_mos)
-    pyramid_blend = blend.pyramid_blending(graphcut_mos, pyr_levels=4)
-    #pyramid_blend = ip.apply_clahe(pyramid_blend, limit=1)
-    return graphcut_mos, pyramid_blend
+        graphcut_mos = blend.graph_cut(c_mask, c_mos, Img1, Img2_warp, M2,mosaic_pre)
+        graphcut_mos = ip.image_resize(graphcut_mos, value=2000)
+        #graphcut_mos = ip.apply_clahe(graphcut_mos, limit=1)
+        pyramid_blend = blend.pyramid_blending(graphcut_mos, pyr_levels=3)
+        #pyramid_blend = ip.apply_clahe(pyramid_blend, limit=0.2) 
+        #pyramid_blend = ip.image_resize(pyramid_blend, value=2000)
+        pyramid_blend = cv.normalize(pyramid_blend, None, 0, 255, cv.NORM_MINMAX)
+        return graphcut_mos, pyramid_blend
+    else:
+        return Img1, Img1
 
 
 if __name__ == "__main__":
@@ -538,8 +551,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     input_path = args.input_path
     print(input_path)
-    #     input_path = "./val_set/1"
-    #     print("Input Path =", input_path)
     images = glob(os.path.join(input_path, "*"))
     print("Folder Content:",images)
     z = ""
